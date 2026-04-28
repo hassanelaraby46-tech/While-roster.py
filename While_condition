@@ -1,0 +1,99 @@
+import pandas as pd
+from xlsxwriter.utility import xl_col_to_name
+import calendar
+import datetime
+
+# جلب التاريخ الحالي تلقائياً (أبريل 2026)
+now = datetime.datetime.now()
+year = now.year    
+month = now.month  
+
+print(f"--- SHIFTS DISTRIBUTION SYSTEM ({calendar.month_name[month]} {year}) ---")
+print("ENTER STAFF NAMES (TYPE 'DONE' TO FINISH):")
+
+names = []
+while True:
+    name_input = input("EMPLOYEE NAME: ").strip()
+    if name_input.lower() == 'done': 
+        if not names:
+            print("⚠️ WARNING! ENTER AT LEAST 1 NAME.")
+            continue
+        break
+    
+    if name_input in names:
+        print(f"⚠️ {name_input} IS ALREADY ADDED!")
+    elif name_input:
+        names.append(name_input)
+        print(f"✅ ADDED: {name_input} (TOTAL: {len(names)})")
+
+# تعريف المناوبات والساعات
+shifts = ['M', 'L', 'L', 'N', 'N', 'O', 'O']
+num_days = calendar.monthrange(year, month)[1] 
+
+# تجهيز قوائم الأيام
+days_list = [datetime.date(year, month, day).strftime("%d-%b") for day in range(1, num_days + 1)]
+day_names_list = [calendar.day_name[calendar.weekday(year, month, day)].lower() for day in range(1, num_days + 1)]
+
+data = []
+for i, name in enumerate(names):
+    # تدوير المناوبات بشكل عادل لكل موظف بنمط مختلف
+    fair_shifts = [shifts[(k + i) % len(shifts)] for k in range(num_days)]
+    for day_num, day_name, shift in zip(days_list, day_names_list, fair_shifts):
+        data.append({'names': name, 'Date': day_num, 'day': day_name, 'shifts': shift})
+
+df = pd.DataFrame(data)
+df['names'] = pd.Categorical(df['names'], categories=names, ordered=True)
+df_H = df.pivot(index=['Date', 'day'], columns='names', values='shifts')
+
+# إنشاء ملف الإكسيل
+file_name = f'Roster_{calendar.month_name[month]}_{year}.xlsx'
+writer = pd.ExcelWriter(file_name, engine='xlsxwriter')
+df_H.to_excel(writer, index=True, sheet_name='Schedule')
+
+worksheet = writer.sheets['Schedule']
+workbook  = writer.book
+
+# التنسيقات (Formats)
+format_M = workbook.add_format({'bg_color': '#CFE2F3', 'font_color': '#0B5394', 'border': 1})
+format_L = workbook.add_format({'bg_color': '#FFF2CC', 'font_color': '#BF9000', 'border': 1})
+format_N = workbook.add_format({'bg_color': '#F4CCCC', 'font_color': '#A61C00', 'border': 1})
+format_O = workbook.add_format({'bg_color': '#D9EAD3', 'font_color': '#38761D', 'border': 1})
+friday_format = workbook.add_format({'bg_color': '#EAD1DC', 'font_color': '#990000', 'bold': True, 'border': 1})
+header_format = workbook.add_format({'bold': True, 'bg_color': '#D3D3D3', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+
+last_col_idx = len(names) + 1
+last_col_letter = xl_col_to_name(last_col_idx)
+full_range = f'C2:{last_col_letter}{num_days + 1}'
+
+# تطبيق التنسيق الشرطي للمناوبات
+shift_formats = [('M', format_M), ('L', format_L), ('N', format_N), ('O', format_O)]
+for val, fmt in shift_formats:
+    worksheet.conditional_format(full_range, {'type': 'cell', 'criteria': '==', 'value': f'"{val}"', 'format': fmt})
+
+# تلوين أيام الجمعة
+for row_idx, d_name in enumerate(day_names_list):
+    if d_name == 'friday':
+        row_range = f'A{row_idx + 2}:{last_col_letter}{row_idx + 2}'
+        worksheet.conditional_format(row_range, {'type': 'no_blanks', 'format': friday_format})
+
+# تنسيق العواميد
+worksheet.set_column('A:A', 10)
+worksheet.set_column('B:B', 12)
+worksheet.set_column(2, last_col_idx, 10)
+
+# إضافة صف المجموع في النهاية مع المعادلات
+total_row_idx = num_days + 1
+worksheet.write(total_row_idx, 0, 'TOTAL', header_format)
+worksheet.write(total_row_idx, 1, 'HOURS', header_format)
+
+for i, _ in enumerate(names):
+    col_letter = xl_col_to_name(i + 2)
+    # المعادلة تحسب: M=6h, L=12h, N=12h
+    formula = f'=(COUNTIF({col_letter}2:{col_letter}{num_days+1},"M")*6)+(COUNTIF({col_letter}2:{col_letter}{num_days+1},"L")*12)+(COUNTIF({col_letter}2:{col_letter}{num_days+1},"N")*12)'
+    worksheet.write_formula(total_row_idx, i + 2, formula, header_format)
+
+# تجميد الألواح لسهولة التصفح
+worksheet.freeze_panes(1, 2)
+
+writer.close()
+print(f"\n🎉 DONE! File saved as: {file_name}")
