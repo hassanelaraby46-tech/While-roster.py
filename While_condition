@@ -3,7 +3,10 @@ import pandas as pd
 from xlsxwriter.utility import xl_col_to_name
 import calendar
 import datetime
+st.set_page_config(page_title="Shift Distribution System", page_icon="📅")
 
+st.title("📅 Shift Distribution System")
+st.markdown("قم بإدخال أسماء الموظفين لتوليد جدول المناوبات تلقائياً لعام 2026.")
 # جلب التاريخ الحالي تلقائياً (أبريل 2026)
 now = datetime.datetime.now()
 year = now.year    
